@@ -1019,6 +1019,11 @@ export function createLodestarMetrics(
         help: "eth1 JsonHttpClient - total count of request errors",
         labelNames: ["routeId"],
       }),
+      retryCount: register.gauge<"routeId">({
+        name: "lodestar_eth1_http_client_request_retries_total",
+        help: "eth1 JsonHttpClient - total count of request retries",
+        labelNames: ["routeId"],
+      }),
       requestUsedFallbackUrl: register.gauge({
         name: "lodestar_eth1_http_client_request_used_fallback_url_total",
         help: "eth1 JsonHttpClient - total count of requests on fallback url(s)",
@@ -1044,6 +1049,11 @@ export function createLodestarMetrics(
       requestErrors: register.gauge<"routeId">({
         name: "lodestar_execution_engine_http_client_request_errors_total",
         help: "ExecutionEngineHttp client - total count of request errors",
+        labelNames: ["routeId"],
+      }),
+      retryCount: register.gauge<"routeId">({
+        name: "lodestar_execution_engine_http_client_request_retries_total",
+        help: "ExecutionEngineHttp client - total count of request retries",
         labelNames: ["routeId"],
       }),
       requestUsedFallbackUrl: register.gauge({
