@@ -1,12 +1,12 @@
 import {expect} from "chai";
 import {config} from "@chainsafe/lodestar-config/default";
-import {LevelDbController} from "@chainsafe/lodestar-db";
 import {fromHexString} from "@chainsafe/ssz";
 import {allForks, phase0, ssz} from "@chainsafe/lodestar-types";
 import {BeaconDb} from "../../../../../../src/db/index.js";
 import {generateSignedBlock} from "../../../../../utils/block.js";
 import {testLogger} from "../../../../../utils/logger.js";
 import {BlockArchiveBatchPutBinaryItem} from "../../../../../../src/db/repositories/index.js";
+import {startTmpBeaconDb} from "../../../../../utils/db.js";
 
 describe("BlockArchiveRepository", function () {
   let db: BeaconDb;
@@ -35,11 +35,7 @@ describe("BlockArchiveRepository", function () {
   });
 
   before(async () => {
-    db = new BeaconDb({
-      config,
-      controller: new LevelDbController({name: ".tmpdb"}, {logger}),
-    });
-    await db.start();
+    db = await startTmpBeaconDb(config, logger);
   });
 
   after(async () => {

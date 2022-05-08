@@ -31,6 +31,7 @@ export function getInteropState(
   latestPayloadHeader.prevRandao = eth1BlockHash;
   latestPayloadHeader.gasLimit = GENESIS_GAS_LIMIT;
   latestPayloadHeader.baseFeePerGas = GENESIS_BASE_FEE_PER_GAS;
+
   const state = initializeBeaconStateFromEth1(
     config,
     createEmptyEpochContextImmutableData(config, {genesisValidatorsRoot: Buffer.alloc(32, 0)}),
@@ -40,6 +41,8 @@ export function getInteropState(
     fullDepositDataRootList,
     latestPayloadHeader
   );
+
   state.genesisTime = genesisTime;
+
   return state;
 }

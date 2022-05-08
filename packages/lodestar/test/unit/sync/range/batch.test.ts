@@ -5,6 +5,7 @@ import {config} from "@chainsafe/lodestar-config/default";
 import {generateEmptySignedBlock} from "../../../utils/block.js";
 import {expectThrowsLodestarError} from "../../../utils/errors.js";
 import {Batch, BatchOpts, BatchStatus, BatchErrorCode, BatchError} from "../../../../src/sync/range/batch.js";
+import {BATCH_SLOT_OFFSET} from "../../../../src/sync/constants.js";
 
 describe("sync / range / batch", () => {
   const opts: BatchOpts = {epochsPerBatch: 2};
@@ -17,7 +18,7 @@ describe("sync / range / batch", () => {
   it("Should return correct blockByRangeRequest", () => {
     const batch = new Batch(startEpoch, config, opts);
     expect(batch.request).to.deep.equal({
-      startSlot: 1,
+      startSlot: BATCH_SLOT_OFFSET,
       count: SLOTS_PER_EPOCH * opts.epochsPerBatch,
       step: 1,
     });

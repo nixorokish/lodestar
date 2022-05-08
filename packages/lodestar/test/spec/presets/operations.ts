@@ -2,6 +2,7 @@ import {
   BeaconStateAllForks,
   CachedBeaconStateAllForks,
   CachedBeaconStateBellatrix,
+  getBlockRootAtSlot,
 } from "@chainsafe/lodestar-beacon-state-transition";
 import * as blockFns from "@chainsafe/lodestar-beacon-state-transition/block";
 import {ssz, phase0, altair, bellatrix} from "@chainsafe/lodestar-types";
@@ -23,6 +24,7 @@ const sync_aggregate: BlockProcessFn<CachedBeaconStateAllForks> = (
   // processSyncAggregate() needs the full block to get the slot
   block.slot = state.slot;
   block.body.syncAggregate = ssz.altair.SyncAggregate.toViewDU(testCase["sync_aggregate"]);
+  block.parentRoot = getBlockRootAtSlot(state, Math.max(block.slot, 1) - 1);
 
   blockFns.processSyncAggregate(state, block);
 };

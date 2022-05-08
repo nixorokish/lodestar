@@ -12,6 +12,7 @@ export type IChainOptions = BlockProcessOpts &
     persistInvalidSszObjects?: boolean;
     persistInvalidSszObjectsDir?: string;
     defaultFeeRecipient: string;
+    skipCreateStateCacheIfAvailable?: boolean;
   };
 
 export type BlockProcessOpts = {

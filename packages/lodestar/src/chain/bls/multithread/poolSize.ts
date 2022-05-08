@@ -7,7 +7,7 @@ try {
     defaultPoolSize = (await import("node:os")).cpus().length;
   }
 } catch (e) {
-  defaultPoolSize = 8;
+  defaultPoolSize = 4;
 }
 
 /**

@@ -1,4 +1,23 @@
-import {IFilterOptions} from "@chainsafe/lodestar-db";
+import child_process from "node:child_process";
+import {IFilterOptions, LevelDbController} from "@chainsafe/lodestar-db";
+import {IChainForkConfig} from "@chainsafe/lodestar-config";
+import {ILogger} from "@chainsafe/lodestar-utils";
+import {BeaconDb} from "../../src/index.js";
+
+export const TEMP_DB_LOCATION = ".tmpdb";
+
+export async function startTmpBeaconDb(config: IChainForkConfig, logger: ILogger): Promise<BeaconDb> {
+  // Clean-up db first
+  child_process.execSync(`rm -rf ${TEMP_DB_LOCATION}`);
+
+  const db = new BeaconDb({
+    config,
+    controller: new LevelDbController({name: TEMP_DB_LOCATION}, {logger}),
+  });
+  await db.start();
+
+  return db;
+}
 
 /**
  * Helper to filter an array with DB IFilterOptions options

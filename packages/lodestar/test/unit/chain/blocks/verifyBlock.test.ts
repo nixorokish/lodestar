@@ -2,9 +2,8 @@ import sinon, {SinonStubbedInstance} from "sinon";
 
 import {config} from "@chainsafe/lodestar-config/default";
 import {ForkChoice, IProtoBlock} from "@chainsafe/lodestar-fork-choice";
-
 import {allForks, ssz} from "@chainsafe/lodestar-types";
-import {verifyBlockSanityChecks, VerifyBlockModules} from "../../../../src/chain/blocks/verifyBlock.js";
+import {verifyBlocksSanityChecks, VerifyBlockModules} from "../../../../src/chain/blocks/verifyBlock.js";
 import {LocalClock} from "../../../../src/chain/clock/index.js";
 import {BlockErrorCode} from "../../../../src/chain/errors/index.js";
 import {expectThrowsLodestarError} from "../../../utils/errors.js";
@@ -30,29 +29,29 @@ describe("chain / blocks / verifyBlock", function () {
 
   it("PARENT_UNKNOWN", function () {
     forkChoice.getBlockHex.returns(null);
-    expectThrowsLodestarError(() => verifyBlockSanityChecks(modules, {block}), BlockErrorCode.PARENT_UNKNOWN);
+    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [{block}]), BlockErrorCode.PARENT_UNKNOWN);
   });
 
   it("GENESIS_BLOCK", function () {
     block.message.slot = 0;
-    expectThrowsLodestarError(() => verifyBlockSanityChecks(modules, {block}), BlockErrorCode.GENESIS_BLOCK);
+    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [{block}]), BlockErrorCode.GENESIS_BLOCK);
   });
 
   it("ALREADY_KNOWN", function () {
     forkChoice.hasBlockHex.returns(true);
-    expectThrowsLodestarError(() => verifyBlockSanityChecks(modules, {block}), BlockErrorCode.ALREADY_KNOWN);
+    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [{block}]), BlockErrorCode.ALREADY_KNOWN);
   });
 
   it("WOULD_REVERT_FINALIZED_SLOT", function () {
     forkChoice.getFinalizedCheckpoint.returns({epoch: 5, root: Buffer.alloc(32), rootHex: ""});
     expectThrowsLodestarError(
-      () => verifyBlockSanityChecks(modules, {block}),
+      () => verifyBlocksSanityChecks(modules, [{block}]),
       BlockErrorCode.WOULD_REVERT_FINALIZED_SLOT
     );
   });
 
   it("FUTURE_SLOT", function () {
     block.message.slot = currentSlot + 1;
-    expectThrowsLodestarError(() => verifyBlockSanityChecks(modules, {block}), BlockErrorCode.FUTURE_SLOT);
+    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [{block}]), BlockErrorCode.FUTURE_SLOT);
   });
 });
