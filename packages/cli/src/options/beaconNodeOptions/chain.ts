@@ -8,9 +8,8 @@ export interface IChainArgs {
   "chain.persistInvalidSszObjects": boolean;
   "chain.proposerBoostEnabled": boolean;
   "chain.defaultFeeRecipient": string;
+  "chain.maxSkipSlots": number;
   "safe-slots-to-import-optimistically": number;
-  // this is defined as part of IBeaconPaths
-  // "chain.persistInvalidSszObjectsDir": string;
 }
 
 export function parseArgs(args: IChainArgs): IBeaconNodeOptions["chain"] {
@@ -23,6 +22,7 @@ export function parseArgs(args: IChainArgs): IBeaconNodeOptions["chain"] {
     persistInvalidSszObjectsDir: undefined as any,
     proposerBoostEnabled: args["chain.proposerBoostEnabled"],
     defaultFeeRecipient: args["chain.defaultFeeRecipient"],
+    maxSkipSlots: args["chain.maxSkipSlots"],
     safeSlotsToImportOptimistically: args["safe-slots-to-import-optimistically"],
   };
 }
@@ -69,10 +69,16 @@ Will double processing times. Use only for debugging purposes.",
   },
 
   "chain.defaultFeeRecipient": {
+    type: "string",
     description:
       "Specify fee recipient default for collecting the EL block fees and rewards (a hex string representing 20 bytes address: ^0x[a-fA-F0-9]{40}$) in case validator fails to update for a validator index before calling produceBlock.",
     defaultDescription: defaultOptions.chain.defaultFeeRecipient,
-    type: "string",
+    group: "chain",
+  },
+
+  "chain.maxSkipSlots": {
+    type: "number",
+    description: "Refuse to skip more than this many slots when processing a block or attestation",
     group: "chain",
   },
 
