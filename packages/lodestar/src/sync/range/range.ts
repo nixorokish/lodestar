@@ -4,7 +4,7 @@ import PeerId from "peer-id";
 import {computeEpochAtSlot, computeStartSlotAtEpoch} from "@chainsafe/lodestar-beacon-state-transition";
 import {IBeaconConfig} from "@chainsafe/lodestar-config";
 import {Epoch, Slot, phase0} from "@chainsafe/lodestar-types";
-import {ILogger} from "@chainsafe/lodestar-utils";
+import {ILogger, toHex} from "@chainsafe/lodestar-utils";
 import {IBeaconChain} from "../../chain/index.js";
 import {INetwork} from "../../network/index.js";
 import {IMetrics} from "../../metrics/index.js";
@@ -251,7 +251,7 @@ export class RangeSync extends (EventEmitter as {new (): RangeSyncEmitter}) {
         this.opts
       );
       this.chains.set(syncType, syncChain);
-      this.logger.verbose("Added syncChain", {syncType});
+      this.logger.verbose("Added syncChain", {syncType, targetSlot: target.slot, targetRoot: toHex(target.root)});
       this.metrics?.syncRange.syncChainsEvents.inc({syncType: syncChain.syncType, event: "add"});
     }
 
