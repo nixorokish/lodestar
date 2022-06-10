@@ -24,7 +24,7 @@ import {IBlsVerifier} from "../bls/index.js";
 import {ExecutePayloadStatus} from "../../executionEngine/interface.js";
 import {byteArrayEquals} from "../../util/bytes.js";
 import {IEth1ForBlockProduction} from "../../eth1/index.js";
-import {FullyVerifiedBlock, PartiallyVerifiedBlock} from "./types.js";
+import {FullyVerifiedBlock, ImportBlockOpts} from "./types.js";
 import {POS_PANDA_MERGE_TRANSITION_BANNER} from "./utils/pandaMergeTransitionBanner.js";
 
 export type VerifyBlockModules = {
@@ -45,23 +45,22 @@ export type VerifyBlockModules = {
  */
 export async function verifyBlocks(
   chain: VerifyBlockModules,
-  partiallyVerifiedBlocks: PartiallyVerifiedBlock[],
-  opts: BlockProcessOpts
+  blocks: allForks.SignedBeaconBlock[],
+  opts: ImportBlockOpts & BlockProcessOpts
 ): Promise<FullyVerifiedBlock[]> {
-  const {parentBlock, relevantPartiallyVerifiedBlocks} = verifyBlocksSanityChecks(chain, partiallyVerifiedBlocks);
+  const {parentBlock, relevantBlocks} = verifyBlocksSanityChecks(chain, blocks, opts);
 
   // No relevant blocks, skip verifyBlocksInEpoch()
-  if (relevantPartiallyVerifiedBlocks.length === 0) {
+  if (relevantBlocks.length === 0) {
     return [];
   }
 
-  const {postStates, executionStatuses} = await verifyBlocksInEpoch(chain, relevantPartiallyVerifiedBlocks, opts);
+  const {postStates, executionStatuses} = await verifyBlocksInEpoch(chain, relevantBlocks, opts);
 
-  return partiallyVerifiedBlocks.map((partiallyVerifiedBlock, i) => ({
-    block: partiallyVerifiedBlock.block,
+  return blocks.map((block, i) => ({
+    block: block,
     postState: postStates[i],
-    parentBlockSlot: i === 0 ? parentBlock.slot : partiallyVerifiedBlocks[i - 1].block.message.slot,
-    skipImportingAttestations: partiallyVerifiedBlock.skipImportingAttestations,
+    parentBlockSlot: i === 0 ? parentBlock.slot : blocks[i - 1].message.slot,
     executionStatus: executionStatuses[i],
   }));
 }
@@ -80,43 +79,61 @@ export async function verifyBlocks(
  */
 export function verifyBlocksSanityChecks(
   chain: VerifyBlockModules,
-  partiallyVerifiedBlocks: PartiallyVerifiedBlock[]
-): {parentBlock: IProtoBlock; relevantPartiallyVerifiedBlocks: PartiallyVerifiedBlock[]} {
-  if (partiallyVerifiedBlocks.length === 0) {
+  blocks: allForks.SignedBeaconBlock[],
+  opts: ImportBlockOpts
+): {parentBlock: IProtoBlock; relevantBlocks: allForks.SignedBeaconBlock[]} {
+  if (blocks.length === 0) {
     throw Error("Empty partiallyVerifiedBlocks");
   }
 
-  const block0 = partiallyVerifiedBlocks[0].block;
+  const block0 = blocks[0];
+  const block0Slot = block0.message.slot;
 
-  // block0 parent is known to the fork-choice.
-  // No need to check the rest of block parents, they are checked in assertLinearChainSegment()
+  let ignoreFirstblock = false;
+  // Conditions only necessary to check on the first block of the chain, after assertLinearChainSegment()
+  // - If first block is > 0, the rest are
+  // - If first block is after finalized slot, the rest are
+  // - If first block parent is known, the rest are
+  // Not genesis block
+  // IGNORE if `partiallyVerifiedBlock.ignoreIfKnown`
+
+  if (block0Slot === 0) {
+    if (opts.ignoreIfKnown) {
+      ignoreFirstblock = true;
+    } else {
+      throw new BlockError(block0, {code: BlockErrorCode.GENESIS_BLOCK});
+    }
+  }
+
+  // Not finalized slot
+  // IGNORE if `partiallyVerifiedBlock.ignoreIfFinalized`
+  const finalizedSlot = computeStartSlotAtEpoch(chain.forkChoice.getFinalizedCheckpoint().epoch);
+  if (block0Slot <= finalizedSlot) {
+    if (opts.ignoreIfFinalized) {
+      ignoreFirstblock = true;
+    } else {
+      throw new BlockError(block0, {
+        code: BlockErrorCode.WOULD_REVERT_FINALIZED_SLOT,
+        blockSlot: block0Slot,
+        finalizedSlot,
+      });
+    }
+  }
+
+  // Parent is known to the fork-choice
   const parentRoot = toHexString(block0.message.parentRoot);
   const parentBlock = chain.forkChoice.getBlockHex(parentRoot);
   if (!parentBlock) {
     throw new BlockError(block0, {code: BlockErrorCode.PARENT_UNKNOWN, parentRoot});
   }
 
-  const relevantPartiallyVerifiedBlocks = partiallyVerifiedBlocks.filter((partiallyVerifiedBlock) => {
-    const {block, ignoreIfFinalized, ignoreIfKnown} = partiallyVerifiedBlock;
+  const relevantBlocks = blocks.filter((block, i) => {
     const blockSlot = block.message.slot;
 
-    // Not genesis block
-    // IGNORE if `partiallyVerifiedBlock.ignoreIfKnown`
-    if (blockSlot === 0) {
-      if (ignoreIfKnown) return false;
-      throw new BlockError(block, {code: BlockErrorCode.GENESIS_BLOCK});
+    // Conditions only necessary to check on the first block of the chain, after assertLinearChainSegment()
+    if (i === 0 && ignoreFirstblock) {
+      return false;
     }
-
-    // Not finalized slot
-    // IGNORE if `partiallyVerifiedBlock.ignoreIfFinalized`
-    const finalizedSlot = computeStartSlotAtEpoch(chain.forkChoice.getFinalizedCheckpoint().epoch);
-    if (blockSlot <= finalizedSlot) {
-      if (ignoreIfFinalized) return false;
-      throw new BlockError(block, {code: BlockErrorCode.WOULD_REVERT_FINALIZED_SLOT, blockSlot, finalizedSlot});
-    }
-
-    // Check skipped slots limit
-    // TODO
 
     // Block not in the future, also checks for infinity
     const currentSlot = chain.clock.currentSlot;
@@ -130,14 +147,17 @@ export function verifyBlocksSanityChecks(
       chain.config.getForkTypes(block.message.slot).BeaconBlock.hashTreeRoot(block.message)
     );
     if (chain.forkChoice.hasBlockHex(blockHash)) {
-      if (ignoreIfKnown) return false;
-      throw new BlockError(block, {code: BlockErrorCode.ALREADY_KNOWN, root: blockHash});
+      if (opts.ignoreIfKnown) {
+        return false;
+      } else {
+        throw new BlockError(block, {code: BlockErrorCode.ALREADY_KNOWN, root: blockHash});
+      }
     }
 
     return true;
   });
 
-  return {parentBlock, relevantPartiallyVerifiedBlocks};
+  return {parentBlock, relevantBlocks};
 }
 
 /**
@@ -153,19 +173,19 @@ export function verifyBlocksSanityChecks(
  */
 export async function verifyBlocksInEpoch(
   chain: VerifyBlockModules,
-  partiallyVerifiedBlocks: PartiallyVerifiedBlock[],
-  opts: BlockProcessOpts
+  blocks: allForks.SignedBeaconBlock[],
+  opts: BlockProcessOpts & ImportBlockOpts
 ): Promise<{postStates: CachedBeaconStateAllForks[]; executionStatuses: ExecutionStatus[]}> {
-  if (partiallyVerifiedBlocks.length === 0) {
+  if (blocks.length === 0) {
     throw Error("Empty partiallyVerifiedBlocks");
   }
 
-  const block0 = partiallyVerifiedBlocks[0].block;
+  const block0 = blocks[0];
   const epoch = computeEpochAtSlot(block0.message.slot);
 
   // Ensure all blocks are in the same epoch
-  for (let i = 1; i < partiallyVerifiedBlocks.length; i++) {
-    const blockSlot = partiallyVerifiedBlocks[i].block.message.slot;
+  for (let i = 1; i < blocks.length; i++) {
+    const blockSlot = blocks[i].message.slot;
     if (epoch !== computeEpochAtSlot(blockSlot)) {
       throw Error(`Block ${i} slot ${blockSlot} not in same epoch ${epoch}`);
     }
@@ -188,13 +208,13 @@ export async function verifyBlocksInEpoch(
     const [{postStates}, , {executionStatuses}] = await Promise.all([
       // Run state transition only
       // TODO: Ensure it yields to allow flushing to workers and engine API
-      verifyBlockStateTransitionOnly(chain, preState0, partiallyVerifiedBlocks, abortController.signal, opts),
+      verifyBlockStateTransitionOnly(chain, preState0, blocks, abortController.signal, opts),
 
       // All signatures at once
-      verifyBlocksSignatures(chain, preState0, partiallyVerifiedBlocks),
+      verifyBlocksSignatures(chain, preState0, blocks, opts),
 
       // Execution payloads
-      verifyBlockExecutionPayloads(chain, partiallyVerifiedBlocks, preState0, abortController.signal, opts),
+      verifyBlockExecutionPayloads(chain, blocks, preState0, abortController.signal, opts),
     ]);
 
     return {postStates, executionStatuses};
@@ -214,14 +234,15 @@ export async function verifyBlocksInEpoch(
 export async function verifyBlockStateTransitionOnly(
   chain: VerifyBlockModules,
   preState0: CachedBeaconStateAllForks,
-  partiallyVerifiedBlocks: PartiallyVerifiedBlock[],
+  blocks: allForks.SignedBeaconBlock[],
   signal: AbortSignal,
-  opts: BlockProcessOpts
+  opts: BlockProcessOpts & ImportBlockOpts
 ): Promise<{postStates: CachedBeaconStateAllForks[]}> {
-  const postStates = new Array<CachedBeaconStateAllForks>(partiallyVerifiedBlocks.length);
+  const postStates = new Array<CachedBeaconStateAllForks>(blocks.length);
 
-  for (let i = 0; i < partiallyVerifiedBlocks.length; i++) {
-    const {block, validProposerSignature, validSignatures} = partiallyVerifiedBlocks[i];
+  for (let i = 0; i < blocks.length; i++) {
+    const {validProposerSignature, validSignatures} = opts;
+    const block = blocks[i];
     const preState = i === 0 ? preState0 : postStates[i - 1];
 
     // STFN - per_slot_processing() + per_block_processing()
@@ -260,7 +281,7 @@ export async function verifyBlockStateTransitionOnly(
     }
 
     // this avoids keeping our node busy processing blocks
-    if (i < partiallyVerifiedBlocks.length - 1) {
+    if (i < blocks.length - 1) {
       await sleep(0);
     }
   }
@@ -278,7 +299,8 @@ export async function verifyBlockStateTransitionOnly(
 export async function verifyBlocksSignatures(
   chain: VerifyBlockModules,
   preState0: CachedBeaconStateAllForks,
-  partiallyVerifiedBlocks: PartiallyVerifiedBlock[]
+  blocks: allForks.SignedBeaconBlock[],
+  opts: ImportBlockOpts
 ): Promise<void> {
   const isValidPromises: Promise<boolean>[] = [];
 
@@ -286,16 +308,14 @@ export async function verifyBlocksSignatures(
   // We must ensure block.slot <= state.slot before running getAllBlockSignatureSets().
   // NOTE: If in the future multiple blocks signatures are verified at once, all blocks must be in the same epoch
   // so the attester and proposer shufflings are correct.
-  for (const partiallyVerifiedBlock of partiallyVerifiedBlocks) {
-    const {block, validProposerSignature, validSignatures} = partiallyVerifiedBlock;
-
+  for (const block of blocks) {
     // Skip all signature verification
-    if (validSignatures) {
+    if (opts.validSignatures) {
       continue;
     }
 
     const signatureSetsBlock = getBlockSignatureSets(preState0, block, {
-      skipProposerSignature: validProposerSignature,
+      skipProposerSignature: opts.validProposerSignature,
     });
 
     isValidPromises.push(chain.bls.verifySignatureSets(signatureSetsBlock));
@@ -312,10 +332,7 @@ export async function verifyBlocksSignatures(
   if (isValidPromises.length > 0) {
     const isValid = (await Promise.all(isValidPromises)).every((isValid) => isValid === true);
     if (!isValid) {
-      throw new BlockError(partiallyVerifiedBlocks[0].block, {
-        code: BlockErrorCode.INVALID_SIGNATURE,
-        state: preState0,
-      });
+      throw new BlockError(blocks[0], {code: BlockErrorCode.INVALID_SIGNATURE, state: preState0});
     }
   }
 }
@@ -327,14 +344,14 @@ export async function verifyBlocksSignatures(
  */
 export async function verifyBlockExecutionPayloads(
   chain: VerifyBlockModules,
-  partiallyVerifiedBlocks: PartiallyVerifiedBlock[],
+  blocks: allForks.SignedBeaconBlock[],
   preState0: CachedBeaconStateAllForks,
   signal: AbortSignal,
   opts: BlockProcessOpts
 ): Promise<{executionStatuses: ExecutionStatus[]}> {
-  const executionStatuses = new Array<ExecutionStatus>(partiallyVerifiedBlocks.length);
+  const executionStatuses = new Array<ExecutionStatus>(blocks.length);
 
-  for (const {block} of partiallyVerifiedBlocks) {
+  for (const block of blocks) {
     // If blocks are invalid in consensus the main promise could resolve before this loop ends.
     // In that case stop sending blocks to execution engine
     if (signal.aborted) {

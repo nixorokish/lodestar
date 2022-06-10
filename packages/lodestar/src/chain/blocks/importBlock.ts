@@ -27,7 +27,7 @@ import {prepareExecutionPayload} from "../factory/block/body.js";
 import {IEth1ForBlockProduction} from "../../eth1/index.js";
 import {BeaconProposerCache} from "../beaconProposerCache.js";
 import {IBeaconClock} from "../clock/index.js";
-import {FullyVerifiedBlock} from "./types.js";
+import {FullyVerifiedBlock, ImportBlockOpts} from "./types.js";
 import {PendingEvents} from "./utils/pendingEvents.js";
 import {getCheckpointFromState} from "./utils/checkpoint.js";
 
@@ -72,8 +72,12 @@ export type ImportBlockModules = {
  * - head_tracker.register_block(block_root, parent_root, slot)
  * - Send events after everything is done
  */
-export async function importBlock(chain: ImportBlockModules, fullyVerifiedBlock: FullyVerifiedBlock): Promise<void> {
-  const {block, postState, parentBlockSlot, skipImportingAttestations, executionStatus} = fullyVerifiedBlock;
+export async function importBlock(
+  chain: ImportBlockModules,
+  fullyVerifiedBlock: FullyVerifiedBlock,
+  opts: ImportBlockOpts
+): Promise<void> {
+  const {block, postState, parentBlockSlot, executionStatus} = fullyVerifiedBlock;
   const pendingEvents = new PendingEvents(chain.emitter);
 
   // - Observe attestations
@@ -119,7 +123,7 @@ export async function importBlock(chain: ImportBlockModules, fullyVerifiedBlock:
   // Only process attestations of blocks with relevant attestations for the fork-choice:
   // If current epoch is N, and block is epoch X, block may include attestations for epoch X or X - 1.
   // The latest block that is useful is at epoch N - 1 which may include attestations for epoch N - 1 or N - 2.
-  if (!skipImportingAttestations && blockEpoch >= currentEpoch - FORK_CHOICE_ATT_EPOCH_LIMIT) {
+  if (!opts.skipImportingAttestations && blockEpoch >= currentEpoch - FORK_CHOICE_ATT_EPOCH_LIMIT) {
     const attestations = block.message.body.attestations;
     const rootCache = new RootCache(postState);
     const parentSlot = chain.forkChoice.getBlock(block.message.parentRoot)?.slot;

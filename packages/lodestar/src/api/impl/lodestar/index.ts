@@ -109,14 +109,13 @@ export function getLodestarApi({
 
     async getBlockProcessorQueueItems() {
       return (chain as BeaconChain)["blockProcessor"].jobQueue.getItems().map((item) => {
-        const [job] = item.args;
-        const jobs = Array.isArray(job) ? job : [job];
+        const [blocks, opts] = item.args;
         return {
-          blockSlots: jobs.map((j) => j.block.message.slot),
+          blockSlots: blocks.map((block) => block.message.slot),
           jobOpts: {
-            skipImportingAttestations: jobs[0].skipImportingAttestations,
-            validProposerSignature: jobs[0].validProposerSignature,
-            validSignatures: jobs[0].validSignatures,
+            skipImportingAttestations: opts.skipImportingAttestations,
+            validProposerSignature: opts.validProposerSignature,
+            validSignatures: opts.validSignatures,
           },
           addedTimeMs: item.addedTimeMs,
         };

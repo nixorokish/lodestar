@@ -7,8 +7,8 @@ import {BlockProcessOpts} from "../options.js";
 import {verifyBlocks, VerifyBlockModules} from "./verifyBlock.js";
 import {importBlock, ImportBlockModules} from "./importBlock.js";
 import {assertLinearChainSegment} from "./utils/chainSegment.js";
-import {PartiallyVerifiedBlock} from "./types.js";
-export {PartiallyVerifiedBlockFlags} from "./types.js";
+import {ImportBlockOpts} from "./types.js";
+export {ImportBlockOpts};
 
 const QUEUE_MAX_LENGHT = 256;
 
@@ -18,28 +18,20 @@ export type ProcessBlockModules = VerifyBlockModules & ImportBlockModules;
  * BlockProcessor processes block jobs in a queued fashion, one after the other.
  */
 export class BlockProcessor {
-  readonly jobQueue: JobItemQueue<[PartiallyVerifiedBlock[] | PartiallyVerifiedBlock], void>;
+  readonly jobQueue: JobItemQueue<[allForks.SignedBeaconBlock[], ImportBlockOpts], void>;
 
   constructor(modules: ProcessBlockModules, opts: BlockProcessOpts, signal: AbortSignal) {
-    this.jobQueue = new JobItemQueue(
-      (job) => {
-        if (!Array.isArray(job)) {
-          return processBlock(modules, job, opts);
-        } else {
-          return processChainSegment(modules, job, opts);
-        }
+    this.jobQueue = new JobItemQueue<[allForks.SignedBeaconBlock[], ImportBlockOpts], void>(
+      (job, importOpts) => {
+        return processChainSegment(modules, job, {...opts, ...importOpts});
       },
       {maxLength: QUEUE_MAX_LENGHT, signal},
       modules.metrics ? modules.metrics.blockProcessorQueue : undefined
     );
   }
 
-  async processBlockJob(job: PartiallyVerifiedBlock): Promise<void> {
-    await this.jobQueue.push(job);
-  }
-
-  async processChainSegment(job: PartiallyVerifiedBlock[]): Promise<void> {
-    await this.jobQueue.push(job);
+  async processBlocksJob(job: allForks.SignedBeaconBlock[], opts: ImportBlockOpts = {}): Promise<void> {
+    await this.jobQueue.push(job, opts);
   }
 }
 
@@ -57,29 +49,15 @@ export class BlockProcessor {
  *
  * All other effects are provided by downstream event handlers
  */
-export async function processBlock(
-  modules: ProcessBlockModules,
-  partiallyVerifiedBlock: PartiallyVerifiedBlock,
-  opts: BlockProcessOpts
-): Promise<void> {
-  await processChainSegment(modules, [partiallyVerifiedBlock], opts);
-}
-
-/**
- * Similar to processBlockJob but this process a chain segment
- */
 export async function processChainSegment(
   modules: ProcessBlockModules,
-  partiallyVerifiedBlocks: PartiallyVerifiedBlock[],
-  opts: BlockProcessOpts
+  blocks: allForks.SignedBeaconBlock[],
+  opts: BlockProcessOpts & ImportBlockOpts
 ): Promise<void> {
-  if (partiallyVerifiedBlocks.length === 0) {
+  if (blocks.length === 0) {
     return; // TODO: or throw?
-  } else if (partiallyVerifiedBlocks.length > 1) {
-    assertLinearChainSegment(
-      modules.config,
-      partiallyVerifiedBlocks.map((b) => b.block)
-    );
+  } else if (blocks.length > 1) {
+    assertLinearChainSegment(modules.config, blocks);
   }
 
   // TODO: Does this makes sense with current batch verify approach?
@@ -87,21 +65,21 @@ export async function processChainSegment(
   const importedBlocks = 0;
 
   try {
-    const fullyVerifiedBlocks = await verifyBlocks(modules, partiallyVerifiedBlocks, opts);
+    const fullyVerifiedBlocks = await verifyBlocks(modules, blocks, opts);
 
     for (const fullyVerifiedBlock of fullyVerifiedBlocks) {
       // No need to sleep(0) here since `importBlock` includes a disk write
       // TODO: Consider batching importBlock too if it takes significant time
-      await importBlock(modules, fullyVerifiedBlock);
+      await importBlock(modules, fullyVerifiedBlock, opts);
     }
   } catch (e) {
     // above functions should only throw BlockError
-    const err = getBlockError(e, partiallyVerifiedBlocks[0].block);
+    const err = getBlockError(e, blocks[0]);
 
     modules.emitter.emit(ChainEvent.errorBlock, err);
 
     // Convert to ChainSegmentError to append `importedBlocks` data
-    const chainSegmentError = new ChainSegmentError(partiallyVerifiedBlocks[0].block, err.type, importedBlocks);
+    const chainSegmentError = new ChainSegmentError(blocks[0], err.type, importedBlocks);
     chainSegmentError.stack = err.stack;
     throw chainSegmentError;
   }
