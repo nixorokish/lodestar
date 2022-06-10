@@ -48,7 +48,7 @@ export async function verifyBlocks(
 
   const {postStates, executionStatuses} = await verifyBlocksInEpoch(chain, relevantBlocks, opts);
 
-  return blocks.map((block, i) => ({
+  return relevantBlocks.map((block, i) => ({
     block: block,
     postState: postStates[i],
     parentBlockSlot: parentSlots[i],
