@@ -5,7 +5,7 @@ import {IChainForkConfig} from "@chainsafe/lodestar-config";
 import {LodestarError} from "@chainsafe/lodestar-utils";
 import {computeStartSlotAtEpoch} from "@chainsafe/lodestar-beacon-state-transition";
 import {BATCH_SLOT_OFFSET, MAX_BATCH_DOWNLOAD_ATTEMPTS, MAX_BATCH_PROCESSING_ATTEMPTS} from "../constants.js";
-import {ChainSegmentError, BlockErrorCode} from "../../chain/errors/index.js";
+import {BlockError, BlockErrorCode} from "../../chain/errors/index.js";
 import {hashBlocks} from "./utils/index.js";
 
 export type BatchOpts = {
@@ -174,7 +174,7 @@ export class Batch {
       throw new BatchError(this.wrongStatusErrorType(BatchStatus.Processing));
     }
 
-    if (err instanceof ChainSegmentError && err.type.code === BlockErrorCode.EXECUTION_ENGINE_ERROR) {
+    if (err instanceof BlockError && err.type.code === BlockErrorCode.EXECUTION_ENGINE_ERROR) {
       this.onExecutionEngineError(this.state.attempt);
     } else {
       this.onProcessingError(this.state.attempt);
@@ -189,7 +189,7 @@ export class Batch {
       throw new BatchError(this.wrongStatusErrorType(BatchStatus.AwaitingValidation));
     }
 
-    if (err instanceof ChainSegmentError && err.type.code === BlockErrorCode.EXECUTION_ENGINE_ERROR) {
+    if (err instanceof BlockError && err.type.code === BlockErrorCode.EXECUTION_ENGINE_ERROR) {
       this.onExecutionEngineError(this.state.attempt);
     } else {
       this.onProcessingError(this.state.attempt);

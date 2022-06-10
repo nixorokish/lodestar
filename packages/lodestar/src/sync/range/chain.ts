@@ -5,7 +5,6 @@ import {ErrorAborted, ILogger} from "@chainsafe/lodestar-utils";
 import {IChainForkConfig} from "@chainsafe/lodestar-config";
 import {toHexString} from "@chainsafe/ssz";
 import {PeerAction} from "../../network/index.js";
-import {ChainSegmentError} from "../../chain/errors/index.js";
 import {ItTrigger} from "../../util/itTrigger.js";
 import {byteArrayEquals} from "../../util/bytes.js";
 import {PeerMap} from "../../util/peerMap.js";
@@ -437,11 +436,14 @@ export class SyncChain {
       this.logger.verbose("Batch process error", {id: this.logId, ...batch.getMetadata()}, res.err);
       batch.processingError(res.err); // Throws after MAX_BATCH_PROCESSING_ATTEMPTS
 
-      // At least one block was successfully verified and imported, so we can be sure all
-      // previous batches are valid and we only need to download the current failed batch.
-      if (res.err instanceof ChainSegmentError && res.err.importedBlocks > 0) {
-        this.advanceChain(batch.startEpoch);
-      }
+      // TODO: After adding parallel verification it's not trivial to import only _SOME_ blocks,
+      // So if the block segment is invalid, not block is imported. This optimization is left commented as a TODO.
+      //
+      // // At least one block was successfully verified and imported, so we can be sure all
+      // // previous batches are valid and we only need to download the current failed batch.
+      // if (res.err instanceof ChainSegmentError && res.err.importedBlocks > 0) {
+      //   this.advanceChain(batch.startEpoch);
+      // }
 
       // The current batch could not be processed, so either this or previous batches are invalid.
       // All previous batches (AwaitingValidation) are potentially faulty and marked for retry.

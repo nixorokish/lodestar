@@ -2,7 +2,7 @@
 import {allForks} from "@chainsafe/lodestar-types";
 import {ChainEvent} from "../emitter.js";
 import {JobItemQueue} from "../../util/queue/index.js";
-import {BlockError, BlockErrorCode, ChainSegmentError} from "../errors/index.js";
+import {BlockError, BlockErrorCode} from "../errors/index.js";
 import {BlockProcessOpts} from "../options.js";
 import {verifyBlocks, VerifyBlockModules} from "./verifyBlock.js";
 import {importBlock, ImportBlockModules} from "./importBlock.js";
@@ -60,10 +60,6 @@ export async function processChainSegment(
     assertLinearChainSegment(modules.config, blocks);
   }
 
-  // TODO: Does this makes sense with current batch verify approach?
-  //       No block is imported until all blocks are verified
-  const importedBlocks = 0;
-
   try {
     const fullyVerifiedBlocks = await verifyBlocks(modules, blocks, opts);
 
@@ -75,13 +71,9 @@ export async function processChainSegment(
   } catch (e) {
     // above functions should only throw BlockError
     const err = getBlockError(e, blocks[0]);
-
     modules.emitter.emit(ChainEvent.errorBlock, err);
 
-    // Convert to ChainSegmentError to append `importedBlocks` data
-    const chainSegmentError = new ChainSegmentError(blocks[0], err.type, importedBlocks);
-    chainSegmentError.stack = err.stack;
-    throw chainSegmentError;
+    throw e;
   }
 }
 

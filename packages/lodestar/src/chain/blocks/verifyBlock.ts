@@ -39,7 +39,7 @@ export async function verifyBlocks(
   blocks: allForks.SignedBeaconBlock[],
   opts: ImportBlockOpts & BlockProcessOpts
 ): Promise<FullyVerifiedBlock[]> {
-  const {parentBlock, relevantBlocks} = verifyBlocksSanityChecks(chain, blocks, opts);
+  const {relevantBlocks, parentSlots} = verifyBlocksSanityChecks(chain, blocks, opts);
 
   // No relevant blocks, skip verifyBlocksInEpoch()
   if (relevantBlocks.length === 0) {
@@ -51,7 +51,7 @@ export async function verifyBlocks(
   return blocks.map((block, i) => ({
     block: block,
     postState: postStates[i],
-    parentBlockSlot: i === 0 ? parentBlock.slot : blocks[i - 1].message.slot,
+    parentBlockSlot: parentSlots[i],
     executionStatus: executionStatuses[i],
   }));
 }
