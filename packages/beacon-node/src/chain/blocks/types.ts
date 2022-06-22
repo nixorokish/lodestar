@@ -1,5 +1,5 @@
 import {CachedBeaconStateAllForks} from "@lodestar/state-transition";
-import {ProtoBlock, ExecutionStatus} from "@lodestar/fork-choice";
+import {ProtoBlock, MaybeValidExecutionStatus} from "@lodestar/fork-choice";
 import {allForks} from "@lodestar/types";
 
 export type FullyVerifiedBlockFlags = {
@@ -22,7 +22,7 @@ export type FullyVerifiedBlockFlags = {
   /**
    * If the execution payload couldnt be verified because of EL syncing status, used in optimistic sync or for merge block
    */
-  executionStatus?: ExecutionStatus;
+  executionStatus?: MaybeValidExecutionStatus;
 };
 
 export type PartiallyVerifiedBlockFlags = FullyVerifiedBlockFlags & {

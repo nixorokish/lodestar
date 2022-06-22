@@ -202,8 +202,8 @@ export class ExecutionEngineHttp implements IExecutionEngine {
         }
       : undefined;
 
-    // TODO: propogate latestValidHash to the forkchoice, for now ignore it as we
-    // currently do not propogate the validation status up the forkchoice
+    // TODO: propagate latestValidHash to the forkchoice, for now ignore it as we
+    // currently do not propagate the validation status up the forkchoice
     const {
       payloadStatus: {status, latestValidHash: _latestValidHash, validationError},
       payloadId,

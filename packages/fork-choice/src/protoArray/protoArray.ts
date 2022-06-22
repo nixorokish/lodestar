@@ -1,6 +1,6 @@
 import {Epoch, RootHex} from "@lodestar/types";
 
-import {ProtoBlock, ProtoNode, HEX_ZERO_HASH} from "./interface.js";
+import {ProtoBlock, ProtoNode, HEX_ZERO_HASH, ExecutionStatus} from "./interface.js";
 import {ProtoArrayError, ProtoArrayErrorCode} from "./errors.js";
 
 export const DEFAULT_PRUNE_THRESHOLD = 0;
@@ -81,7 +81,7 @@ export class ProtoArray {
     finalizedRoot,
   }: {
     deltas: number[];
-    proposerBoost: ProposerBoost | null;
+    proposerBoost?: ProposerBoost | null;
     justifiedEpoch: Epoch;
     justifiedRoot: RootHex;
     finalizedEpoch: Epoch;
@@ -129,7 +129,13 @@ export class ProtoArray {
         this.previousProposerBoost && this.previousProposerBoost.root === node.blockRoot
           ? this.previousProposerBoost.score
           : 0;
-      const nodeDelta = deltas[nodeIndex] + currentBoost - previousBoost;
+
+      // If this node's execution status has been marked invalid, then the weight of the node
+      // needs to be taken out of consideration
+      const nodeDelta =
+        node.executionStatus === ExecutionStatus.Invalid
+          ? -node.weight
+          : deltas[nodeIndex] + currentBoost - previousBoost;
 
       if (nodeDelta === undefined) {
         throw new ProtoArrayError({
@@ -190,6 +196,12 @@ export class ProtoArray {
     if (this.indices.has(block.blockRoot)) {
       return;
     }
+    if (block.executionStatus === ExecutionStatus.Invalid) {
+      throw new ProtoArrayError({
+        code: ProtoArrayErrorCode.INVALID_BLOCK_EXECUTION_STATUS,
+        root: block.blockRoot,
+      });
+    }
 
     const node: ProtoNode = {
       ...block,
@@ -205,6 +217,12 @@ export class ProtoArray {
     this.nodes.push(node);
 
     let parentIndex = node.parent;
+    // If this node is valid, lets propagate the valid status up the chain
+    // and throw error if we counter invalid, as this breaks consensus
+    if (node.executionStatus === ExecutionStatus.Valid && parentIndex !== undefined) {
+      this.propagateValidExecutionStatusByIndex(parentIndex);
+    }
+
     let n: ProtoNode | undefined = node;
     while (parentIndex !== undefined) {
       this.maybeUpdateBestChildAndDescendant(parentIndex, nodeIndex);
@@ -212,6 +230,163 @@ export class ProtoArray {
       n = this.getNodeByIndex(nodeIndex);
       parentIndex = n?.parent;
     }
+  }
+
+  /**
+   * Optimistic sync validate till validated latest hash, invalidate any decendant branch
+   * if invalidate till hash provided. If consensus fails, this will invalidate entire
+   * forkChoice which will throw on any call to findHead
+   */
+  validateLatestHash(latestValidExecHash: RootHex, invalidateTillBlockHash: RootHex | null): void {
+    // Look reverse because its highly likely node with latestValidExecHash is towards the
+    // the leaves of the forkchoice
+    //
+    // We can also implement the index to lookup for exec hash => proto block, but it
+    // still needs to be established properly (though is highly likely) than a unique
+    // exec hash maps to a unique beacon block.
+    // For more context on this please checkout the following conversation:
+    // https://github.com/ChainSafe/lodestar/pull/4182#discussion_r914770167
+
+    let latestValidHashIndex = this.nodes.length - 1;
+    for (; latestValidHashIndex >= 0; latestValidHashIndex--) {
+      if (this.nodes[latestValidHashIndex].executionPayloadBlockHash === latestValidExecHash) {
+        // We found the block corresponding to latestValidHashIndex, exit the loop
+        break;
+      }
+    }
+
+    // If we  found block corresponding to latestValidExecHash, validate it and its parents
+    if (latestValidHashIndex >= 0) {
+      this.propagateValidExecutionStatusByIndex(latestValidHashIndex);
+    }
+
+    if (invalidateTillBlockHash !== null) {
+      const invalidateTillIndex = this.indices.get(invalidateTillBlockHash);
+      if (invalidateTillIndex === undefined) {
+        throw Error(`Unable to find invalidateTillBlockHash=${invalidateTillBlockHash} in forkChoice`);
+      }
+      this.propagateInValidExecutionStatusByIndex(invalidateTillIndex, latestValidHashIndex);
+    }
+  }
+
+  propagateValidExecutionStatusByIndex(validNodeIndex: number): void {
+    let node: ProtoNode | undefined = this.getNodeFromIndex(validNodeIndex);
+    // propagate till we keep encountering syncing status
+    while (
+      node !== undefined &&
+      node.executionStatus !== ExecutionStatus.Valid &&
+      node.executionStatus !== ExecutionStatus.PreMerge
+    ) {
+      switch (node?.executionStatus) {
+        // If parent's execution is Invalid, we can't accept this block
+        // It should only happen on the leaf's parent, because we can't
+        // have a non invalid's parent as valid, if this happens it
+        // is a critical failure. So a chec
+        case ExecutionStatus.Invalid:
+          throw new ProtoArrayError({
+            code: ProtoArrayErrorCode.INVALID_PARENT_EXECUTION_STATUS,
+            root: node.blockRoot,
+            parent: node.parentRoot,
+          });
+
+        case ExecutionStatus.Syncing:
+          // If the node is valid and its parent is marked syncing, we need to
+          // propagate the execution status up
+          node.executionStatus = ExecutionStatus.Valid;
+          break;
+
+        default:
+      }
+
+      node = node.parent !== undefined ? this.getNodeByIndex(node.parent) : undefined;
+    }
+  }
+
+  /**
+   * Do a two pass invalidation:
+   *  1. we go up and mark all nodes invalid and then
+   *  2. we need do iterate down and mark all children of invalid nodes invalid
+   */
+
+  propagateInValidExecutionStatusByIndex(invalidateTillIndex: number, latestValidHashIndex: number): void {
+    /*
+     * invalidateAll is a flag which indicates detection of consensus failure
+     * if latestValidHashIndex has to be strictly parent of invalidateTillIndex
+     * else its consensus failure already!
+     */
+    let invalidateAll = false;
+    let invalidateIndex: number | undefined = invalidateTillIndex;
+
+    // If we haven't found latestValidHashIndex i.e. its -1, and this was an
+    // invalidation call back (because of presense of invalidateTillBlockHash),
+    //  1. It could implies whatever we have in forkchoice downwards from the last
+    //     PreMerge block is all invalid.
+    //  2. If there is INVALID block and any of its ancestors is NOT_VALIDATED then EL
+    //     can return dummy LVH
+    //  3. If the terminal block itself is invalid LVH will be 0x000...00 and will
+    //     result into -1
+    //
+    // So, like other clients, we have to be forgiving, and just invalidate the
+    // invalidateTillIndex.
+    //
+    // More context here in R & D discord conversation regarding how other clients are
+    // handling this:
+    // https://discord.com/channels/595666850260713488/892088344438255616/994279955036905563
+
+    if (latestValidHashIndex < 0) {
+      // This will just allow invalidation of invalidateTillIndex
+      latestValidHashIndex = invalidateTillIndex - 1;
+    }
+
+    // Lets go invalidating, ideally latestValidHashIndex should be the parent of
+    // invalidateTillIndex and we should reach latestValidHashIndex by iterating
+    // to parents, but it might not lead to parent beacause of the conditions
+    // describe above
+    //
+    // So we will also be forgiving like other clients, and keep invalidating only till
+    // we hop on/before latestValidHashIndex by following parent
+    while (invalidateIndex !== undefined && invalidateIndex > latestValidHashIndex) {
+      const invalidNode = this.getNodeFromIndex(invalidateIndex);
+      if (
+        invalidNode.executionStatus !== ExecutionStatus.Syncing &&
+        invalidNode.executionStatus !== ExecutionStatus.Invalid
+      ) {
+        // This is another catastrophe, and indicates consensus failure
+        // the entire forkchoice should be invalidated
+        invalidateAll = true;
+      }
+      invalidNode.executionStatus = ExecutionStatus.Invalid;
+      // Time to propagate up
+      invalidateIndex = invalidNode.parent;
+    }
+
+    // Pass 2: mark all children of invalid nodes as invalid
+    let nodeIndex = 1;
+    while (nodeIndex < this.nodes.length) {
+      const node = this.getNodeFromIndex(nodeIndex);
+      const parent = node.parent !== undefined ? this.getNodeByIndex(node.parent) : undefined;
+      // Only invalidate if this is post merge, and either parent is invalid or the
+      // concensus has failed
+      if (
+        node.executionStatus !== ExecutionStatus.PreMerge &&
+        (invalidateAll || parent?.executionStatus === ExecutionStatus.Invalid)
+      ) {
+        node.executionStatus = ExecutionStatus.Invalid;
+        node.bestChild = undefined;
+        node.bestDescendant = undefined;
+      }
+      nodeIndex++;
+    }
+
+    // update the forkchoice
+    this.applyScoreChanges({
+      deltas: Array.from({length: this.indices.size}, () => 0),
+      proposerBoost: this.previousProposerBoost,
+      justifiedEpoch: this.justifiedEpoch,
+      justifiedRoot: this.justifiedRoot,
+      finalizedEpoch: this.finalizedEpoch,
+      finalizedRoot: this.finalizedRoot,
+    });
   }
 
   /**
@@ -231,6 +406,13 @@ export class ProtoArray {
       throw new ProtoArrayError({
         code: ProtoArrayErrorCode.INVALID_JUSTIFIED_INDEX,
         index: justifiedIndex,
+      });
+    }
+
+    if (justifiedNode.executionStatus === ExecutionStatus.Invalid) {
+      throw new ProtoArrayError({
+        code: ProtoArrayErrorCode.INVALID_JUSTIFIED_EXECUTION_STATUS,
+        root: justifiedNode.blockRoot,
       });
     }
 
@@ -482,6 +664,7 @@ export class ProtoArray {
    * head.
    */
   nodeIsViableForHead(node: ProtoNode): boolean {
+    if (node.executionStatus === ExecutionStatus.Invalid) return false;
     const correctJustified =
       (node.justifiedEpoch === this.justifiedEpoch && node.justifiedRoot === this.justifiedRoot) ||
       this.justifiedEpoch === 0;
@@ -672,7 +855,7 @@ export class ProtoArray {
     return this.indices.size;
   }
 
-  private getNodeFromIndex(index: number): ProtoNode {
+  getNodeFromIndex(index: number): ProtoNode {
     const node = this.nodes[index];
     if (node === undefined) {
       throw new ProtoArrayError({code: ProtoArrayErrorCode.INVALID_NODE_INDEX, index});

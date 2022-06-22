@@ -684,14 +684,20 @@ export class ForkChoice implements IForkChoice {
   }
 
   /**
-   * Optimistic sync validate till validated latest hash, invalidate any decendant branch if invalidate till hash provided
-   * TODO: implementation:
-   * 1. verify is_merge_block if the mergeblock has not yet been validated
-   * 2. Throw critical error and exit if a block in finalized chain gets invalidated
+   * Optimistic sync validate till validated latest hash, invalidate any decendant
+   * branch if invalidate till hash provided
+   *
+   * Proxies to protoArray's validateLatestHash and could run extra validations for the
+   * justified's status as well as validate the terminal conditions if terminal block
+   * becomes valid
    */
-  validateLatestHash(_latestValidHash: RootHex, _invalidateTillHash: RootHex | null): void {
-    // Silently ignore for now if all calls were valid
-    return;
+  validateLatestHash(latestValidExecHash: RootHex, invalidateTillBlockHash: RootHex | null): void {
+    this.protoArray.validateLatestHash(latestValidExecHash, invalidateTillBlockHash);
+
+    // Call findHead to validate that the forkChoice consensus has not broken down
+    // as it is possible for invalidation to invalidate the entire forkChoice if
+    // the consensus breaks down, which will cause findHead to throw
+    this.protoArray.findHead(this.fcStore.justifiedCheckpoint.rootHex);
   }
 
   private getPreMergeExecStatus(preCachedData?: OnBlockPrecachedData): ExecutionStatus.PreMerge {

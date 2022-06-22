@@ -1,5 +1,11 @@
 export {ProtoArray} from "./protoArray/protoArray.js";
-export {ProtoBlock, ProtoNode, ExecutionStatus} from "./protoArray/interface.js";
+export {
+  ProtoBlock,
+  ProtoNode,
+  ExecutionStatus,
+  MaybeValidExecutionStatus,
+  BlockExecution,
+} from "./protoArray/interface.js";
 
 export {ForkChoice, assertValidTerminalPowBlock} from "./forkChoice/forkChoice.js";
 export {IForkChoice, OnBlockPrecachedData, PowBlockHex} from "./forkChoice/interface.js";
