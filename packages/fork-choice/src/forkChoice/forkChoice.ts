@@ -16,7 +16,7 @@ import {
 import {IChainConfig, IChainForkConfig} from "@lodestar/config";
 
 import {computeDeltas} from "../protoArray/computeDeltas.js";
-import {HEX_ZERO_HASH, VoteTracker, ProtoBlock, ExecutionStatus} from "../protoArray/interface.js";
+import {HEX_ZERO_HASH, VoteTracker, ProtoBlock, ExecutionStatus, LVHExecResponse} from "../protoArray/interface.js";
 import {ProtoArray} from "../protoArray/protoArray.js";
 
 import {IForkChoiceMetrics} from "../metrics.js";
@@ -691,8 +691,8 @@ export class ForkChoice implements IForkChoice {
    * justified's status as well as validate the terminal conditions if terminal block
    * becomes valid
    */
-  validateLatestHash(latestValidExecHash: RootHex, invalidateTillBlockHash: RootHex | null): void {
-    this.protoArray.validateLatestHash(latestValidExecHash, invalidateTillBlockHash);
+  validateLatestHash(execResponse: LVHExecResponse): void {
+    this.protoArray.validateLatestHash(execResponse);
 
     // Call findHead to validate that the forkChoice consensus has not broken down
     // as it is possible for invalidation to invalidate the entire forkChoice if

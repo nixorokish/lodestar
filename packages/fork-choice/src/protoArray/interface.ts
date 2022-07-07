@@ -20,6 +20,10 @@ export enum ExecutionStatus {
   Invalid = "Invalid",
 }
 
+export type LVHExecResponse =
+  | {executionStatus: ExecutionStatus.Valid; latestValidExecHash: RootHex; invalidateTillBlockHash: null}
+  | {executionStatus: ExecutionStatus.Invalid; latestValidExecHash: RootHex | null; invalidateTillBlockHash: RootHex};
+
 export type MaybeValidExecutionStatus = Exclude<ExecutionStatus, ExecutionStatus.Invalid>;
 
 export type BlockExecution =

@@ -96,8 +96,12 @@ describe("executionStatus updates", () => {
     ]);
   });
 
-  // Invalidate 3C but validate 2C with parent none which is not present in forkchoice
-  fc.validateLatestHash("2C", "3C");
+  // Invalidate 3C with LVH on 2C which stays in Syncing
+  fc.validateLatestHash({
+    executionStatus: ExecutionStatus.Invalid,
+    latestValidExecHash: "2C",
+    invalidateTillBlockHash: "3C",
+  });
 
   const invalidate3CValidate2CForkChoice = collectProtoarrayValidationStatus();
   it("correcly invalidate 3C and validate 2C only", () => {
@@ -136,7 +140,7 @@ describe("executionStatus updates", () => {
         root: "2C",
         bestChild: undefined,
         bestDescendant: undefined,
-        executionStatus: "Valid",
+        executionStatus: "Syncing",
       },
       {
         root: "3C",
@@ -148,7 +152,11 @@ describe("executionStatus updates", () => {
   });
 
   // Validate 3B, 2B, 1A (premerge)
-  fc.validateLatestHash("3B", null);
+  fc.validateLatestHash({
+    executionStatus: ExecutionStatus.Valid,
+    latestValidExecHash: "3B",
+    invalidateTillBlockHash: null,
+  });
   const validate3B2B1A = collectProtoarrayValidationStatus();
   it("Validate 3B, 2B, 1A", () => {
     expect(validate3B2B1A).to.be.deep.equal([
@@ -186,7 +194,7 @@ describe("executionStatus updates", () => {
         root: "2C",
         bestChild: undefined,
         bestDescendant: undefined,
-        executionStatus: "Valid",
+        executionStatus: "Syncing",
       },
       {
         root: "3C",
@@ -197,7 +205,11 @@ describe("executionStatus updates", () => {
     ]);
   });
 
-  fc.validateLatestHash("1A", "3A");
+  fc.validateLatestHash({
+    executionStatus: ExecutionStatus.Invalid,
+    latestValidExecHash: "1A",
+    invalidateTillBlockHash: "3A",
+  });
   const invalidate3A2A = collectProtoarrayValidationStatus();
   it("Invalidate 3A, 2A with 2A loosing its bestChild, bestDescendant", () => {
     expect(invalidate3A2A).to.be.deep.equal([
@@ -235,7 +247,7 @@ describe("executionStatus updates", () => {
         root: "2C",
         bestChild: undefined,
         bestDescendant: undefined,
-        executionStatus: "Valid",
+        executionStatus: "Syncing",
       },
       {
         root: "3C",

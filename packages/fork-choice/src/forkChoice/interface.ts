@@ -1,7 +1,7 @@
 import {EffectiveBalanceIncrements} from "@lodestar/state-transition";
 import {BeaconStateAllForks} from "@lodestar/state-transition";
 import {Epoch, Slot, ValidatorIndex, phase0, allForks, Root, RootHex} from "@lodestar/types";
-import {ProtoBlock, MaybeValidExecutionStatus} from "../protoArray/interface.js";
+import {ProtoBlock, MaybeValidExecutionStatus, LVHExecResponse} from "../protoArray/interface.js";
 import {CheckpointWithHex} from "./store.js";
 
 export type CheckpointHex = {
@@ -137,7 +137,7 @@ export interface IForkChoice {
   /**
    * Optimistic sync validate till validated latest hash, invalidate any decendant branch if invalidated branch decendant provided
    */
-  validateLatestHash(latestValidHash: RootHex, invalidateTillHash: RootHex | null): void;
+  validateLatestHash(execResponse: LVHExecResponse): void;
 }
 
 /** Same to the PowBlock but we want RootHex to work with forkchoice conveniently */

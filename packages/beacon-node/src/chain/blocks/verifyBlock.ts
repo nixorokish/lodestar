@@ -206,16 +206,23 @@ export async function verifyBlockStateTransition(
     switch (execResult.status) {
       case ExecutePayloadStatus.VALID:
         executionStatus = ExecutionStatus.Valid;
-        chain.forkChoice.validateLatestHash(execResult.latestValidHash, null);
+        chain.forkChoice.validateLatestHash({
+          executionStatus,
+          latestValidExecHash: execResult.latestValidHash,
+          invalidateTillBlockHash: null,
+        });
         break; // OK
 
       case ExecutePayloadStatus.INVALID: {
         // If the parentRoot is not same as latestValidHash, then the branch from latestValidHash
         // to parentRoot needs to be invalidated
-        chain.forkChoice.validateLatestHash(
-          execResult.latestValidHash,
-          parentBlock.executionPayloadBlockHash !== execResult.latestValidHash ? parentRoot : null
-        );
+        if (parentBlock.executionPayloadBlockHash !== execResult.latestValidHash) {
+          chain.forkChoice.validateLatestHash({
+            executionStatus: ExecutionStatus.Invalid,
+            latestValidExecHash: execResult.latestValidHash,
+            invalidateTillBlockHash: parentRoot,
+          });
+        }
         throw new BlockError(block, {
           code: BlockErrorCode.EXECUTION_ENGINE_ERROR,
           execStatus: execResult.status,
@@ -290,7 +297,7 @@ export async function verifyBlockStateTransition(
         throw new BlockError(block, {
           code: BlockErrorCode.EXECUTION_ENGINE_ERROR,
           execStatus: execResult.status,
-          errorMessage: execResult.validationError,
+          errorMessage: execResult.validationError ?? "",
         });
     }
 
