@@ -94,11 +94,11 @@ export class BeaconChain implements IBeaconChain {
 
   // Global state caches
   readonly pubkey2index: PubkeyIndexMap;
-  readonly opts: IChainOptions;
+  readonly index2pubkey: Index2PubkeyCache;
 
   readonly beaconProposerCache: BeaconProposerCache;
+  readonly opts: IChainOptions;
 
-  readonly index2pubkey: Index2PubkeyCache;
   protected readonly blockProcessor: BlockProcessor;
   protected readonly db: IBeaconDb;
   protected readonly logger: ILogger;
